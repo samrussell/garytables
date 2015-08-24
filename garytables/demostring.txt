@@ -1,0 +1,1 @@
+curl -i -H "Content-Type: application/json" -X POST -d '{"src":"3.3.4.4/255.255.255.255", "target":"DROP"}' http://localhost:8080/api/v1.0/table/filter/chain/input

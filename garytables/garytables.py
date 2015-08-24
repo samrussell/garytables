@@ -43,10 +43,7 @@ def parse_iptc_rule_to_dict(rule):
         rule_dict['in_interface'] = rule.in_interface
     if rule.out_interface:
         rule_dict['out_interface'] = rule.out_interface
-    protocol = rule.protocol
-    if protocol == 'ip':
-        protocol = 'all'
-    rule_dict['protocol'] = protocol
+    rule_dict['protocol'] = rule.protocol
     rule_dict['src'] = rule.src
     rule_dict['dst'] = rule.dst
     return rule_dict
@@ -59,6 +56,28 @@ def get_iptables_rules_from_chain(table_name, chain_name):
     chain = chains_by_name[chain_name.upper()]
     rules = [parse_iptc_rule_to_dict(rule) for rule in chain.rules]
     return rules
+
+def add_iptables_rule_to_chain(table_name, chain_name, json_input):
+    # it would be better to have a class for rules that does sanity checking...
+    table = iptc.Table(table_name.lower())
+    table.refresh()
+    chains_by_name = {chain.name : chain for chain in table.chains}
+    chain = chains_by_name[chain_name.upper()]
+    rule = iptc.Rule()
+    if 'in_interface' in json_input:
+        rule.in_interface = json_input['in_interface']
+    if 'out_interface' in json_input:
+        rule.out_interface = json_input['out_interface']
+    if 'src' in json_input:
+        rule.src = json_input['src']
+    if 'dst' in json_input:
+        rule.src = json_input['dst']
+    if 'protocol' in json_input:
+        rule.protocol = json_input['protocol']
+    else:
+        rule.protocol = 'ip'
+    rule.target = iptc.Target(rule, json_input['target'])
+    chain.insert_rule(rule)
 
 @app.route('/api/v1.0/table', methods=['GET'])
 def show_tables():
@@ -84,7 +103,7 @@ def show_rules(table_name, chain_name):
         flask.abort(400)
     # get the chain they want
     rules = get_iptables_rules_from_chain(
-                table_name, chain_name),
+                table_name, chain_name)
     return flask.jsonify(
                         {
                         'table' : {
@@ -92,6 +111,28 @@ def show_rules(table_name, chain_name):
                             'chain' : {
                                 'name' : chain_name,
                                 'rules' : rules,
+                                }
+                            }
+                        })
+
+@app.route('/api/v1.0/table/<table_name>/chain/<chain_name>', methods=['POST'])
+def add_rule(table_name, chain_name):
+    if table_name.upper() not in TABLES:
+        flask.abort(400)
+    if chain_name.upper() not in TABLE_CHAINS[table_name.upper()]:
+        flask.abort(400)
+    # get the chain they want
+    if not flask.request.json:
+        flask.abort(400)
+
+    add_iptables_rule_to_chain(table_name, chain_name, flask.request.json)
+    return flask.jsonify(
+                        {
+                        'table' : {
+                            'name' : table_name,
+                            'chain' : {
+                                'name' : chain_name,
+                                'rule' : flask.request.json,
                                 }
                             }
                         })
