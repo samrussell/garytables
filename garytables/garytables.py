@@ -34,8 +34,9 @@ FILTER_CHAINS = ['INPUT', 'OUTPUT', 'FORWARD']
 TABLE_CHAINS = { 'FILTER' : FILTER_CHAINS }
 TARGETS = ['ACCEPT', 'DROP']
 
-def parse_iptc_rule_to_dict(rule):
+def parse_iptc_rule_to_dict(rule, rule_num):
     rule_dict = {}
+    rule_dict['num'] = rule_num
     rule_dict['target'] = rule.target.name
     # handle logic for table/chain-specific stuff (can do this better
     # example: in_interface is only valid for INPUT chain in FILTER table
@@ -54,7 +55,7 @@ def get_iptables_rules_from_chain(table_name, chain_name):
     table.refresh()
     chains_by_name = {chain.name : chain for chain in table.chains}
     chain = chains_by_name[chain_name.upper()]
-    rules = [parse_iptc_rule_to_dict(rule) for rule in chain.rules]
+    rules = [parse_iptc_rule_to_dict(rule, rule_num) for rule_num, rule in enumerate(chain.rules)]
     return rules
 
 def add_iptables_rule_to_chain(table_name, chain_name, json_input):
@@ -95,7 +96,7 @@ def show_chains(table_name):
                             }
                         })
 
-@app.route('/api/v1.0/table/<table_name>/chain/<chain_name>', methods=['GET'])
+@app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule', methods=['GET'])
 def show_rules(table_name, chain_name):
     if table_name.upper() not in TABLES:
         flask.abort(400)
@@ -115,7 +116,32 @@ def show_rules(table_name, chain_name):
                             }
                         })
 
-@app.route('/api/v1.0/table/<table_name>/chain/<chain_name>', methods=['POST'])
+@app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule/<int:rule_num>', methods=['GET'])
+def show_rule_by_num(table_name, chain_name, rule_num):
+    if table_name.upper() not in TABLES:
+        flask.abort(400)
+    if chain_name.upper() not in TABLE_CHAINS[table_name.upper()]:
+        flask.abort(400)
+    # get the chain they want
+    rules = get_iptables_rules_from_chain(
+                table_name, chain_name)
+    if rule_num < 0 or rule_num > (len(rules)-1):
+        flask.abort(400)
+    rule = rules[rule_num]
+    if rule['num'] != rule_num:
+        flask.abort(400)
+    return flask.jsonify(
+                        {
+                        'table' : {
+                            'name' : table_name,
+                            'chain' : {
+                                'name' : chain_name,
+                                'rule' : rule,
+                                }
+                            }
+                        })
+
+@app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule', methods=['POST'])
 def add_rule(table_name, chain_name):
     if table_name.upper() not in TABLES:
         flask.abort(400)
