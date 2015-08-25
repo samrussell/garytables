@@ -34,6 +34,55 @@ FILTER_CHAINS = ['INPUT', 'OUTPUT', 'FORWARD']
 TABLE_CHAINS = { 'FILTER' : FILTER_CHAINS }
 TARGETS = ['ACCEPT', 'DROP']
 
+class Rule:
+
+    def __init__(self, num=None, in_interface=None, out_interface=None, src=None, dst=None, protocol=None, target=None):
+        self.num = num
+        self.in_interface = in_interface
+        self.out_interface = out_interface
+        self.src = src
+        self.dst = dst
+        self.protocol = protocol
+        self.target = target
+
+    @staticmethod
+    def build_from_iptables(rule, rule_num):
+        rule_dict = {}
+        rule_dict['num'] = rule_num
+        rule_dict['target'] = rule.target.name
+        # handle logic for table/chain-specific stuff (can do this better
+        # example: in_interface is only valid for INPUT chain in FILTER table
+        if rule.in_interface:
+            rule_dict['in_interface'] = rule.in_interface
+        if rule.out_interface:
+            rule_dict['out_interface'] = rule.out_interface
+        rule_dict['protocol'] = rule.protocol
+        rule_dict['src'] = rule.src
+        rule_dict['dst'] = rule.dst
+        # should return a Rule class
+        return Rule(**rule_dict)
+
+    def write_to_iptables(self, table_name, chain_name):
+        table = iptc.Table(table_name.lower())
+        table.refresh()
+        chains_by_name = {chain.name : chain for chain in table.chains}
+        chain = chains_by_name[chain_name.upper()]
+        rule = iptc.Rule()
+        if self.in_interface:
+            rule.in_interface = self.in_interface
+        if self.out_interface:
+            rule.out_interface = self.out_interface
+        if self.src:
+            rule.src = self.src
+        if self.dst:
+            rule.dst = self.dst
+        if self.protocol:
+            rule.protocol = self.protocol
+        else:
+            rule.protocol = 'ip'
+        rule.target = iptc.Target(rule, self.target)
+        chain.insert_rule(rule)
+
 def parse_iptc_rule_to_dict(rule, rule_num):
     rule_dict = {}
     rule_dict['num'] = rule_num
