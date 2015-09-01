@@ -129,6 +129,23 @@ def add_iptables_rule_to_chain(table_name, chain_name, json_input):
     rule.target = iptc.Target(rule, json_input['target'])
     chain.insert_rule(rule)
 
+class RestfulObject:
+
+    def __init__(self):
+        pass
+
+    def to_rest_response(self):
+        output = {'data' : None,
+                'links' : None,
+                 }
+        return output
+
+class IptablesTable(RestfulObject):
+    pass
+
+class IptablesChain(RestfulObject):
+    pass
+
 @app.route('/api/v1.0/table', methods=['GET'])
 def show_tables():
     return flask.jsonify({'tables' : TABLES})
