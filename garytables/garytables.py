@@ -24,7 +24,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
 # OTHER DEALINGS IN THE SOFTWARE.
 
-import flask, iptc
+import flask, iptc, json
 
 app = flask.Flask(__name__)
 
@@ -129,21 +129,50 @@ def add_iptables_rule_to_chain(table_name, chain_name, json_input):
     rule.target = iptc.Target(rule, json_input['target'])
     chain.insert_rule(rule)
 
+class API10:
+    TABLE_LIST_URL = '/table'
+    TABLE_URL = '/table/%(table_name)s'
+    CHAIN_LIST_URL = '/table/%(table_name)s/chain'
+    CHAIN_URL = '/table/%(table_name)s/chain/%(chain_name)s'
+    RULE_LIST_URL = '/table/%(table_name)s/chain/%(chain_name)s/rule'
+    RULE_URL = '/table/%(table_name)s/chain/%(chain_name)s/rule/%(rule_num)d'
+
+    @staticmethod
+    def get_table_list_url():
+        return API10.TABLE_LIST_URL
+
+    @staticmethod
+    def get_table_url(table_name):
+        return API10.TABLE_URL % {'table_name' : table_name}
+
+    @staticmethod
+    def get_chain_list_url(table_name):
+        return API10.CHAIN_LIST_URL % {'table_name' : table_name}
+
+    @staticmethod
+    def get_table_url(table_name, chain_name):
+        return API10.CHAIN_URL % {'table_name' : table_name,
+                                  'chain_name' : chain_name,
+                                  }
+
 class RestfulObject:
 
     def __init__(self):
-        pass
+        self.response = {}
 
     def to_rest_response(self):
-        output = {'data' : None,
-                'links' : None,
-                 }
-        return output
+        return json.dumps(self.response)
 
-class IptablesTable(RestfulObject):
+class IptablesTableList10(RestfulObject):
+
+    def __init__(self):
+        super(IptablesTableList, self).__init__()
+    
+
+class IptablesTable10(RestfulObject):
     pass
 
-class IptablesChain(RestfulObject):
+class IptablesChain10(RestfulObject):
     pass
 
 @app.route('/api/v1.0/table', methods=['GET'])
