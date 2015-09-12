@@ -130,66 +130,97 @@ def add_iptables_rule_to_chain(table_name, chain_name, json_input):
     chain.insert_rule(rule)
 
 class API10:
+    PREFIX = '/api/v1.0'
     TABLE_LIST_URL = '/table'
-    TABLE_URL = '/table/%(table_name)s'
-    CHAIN_LIST_URL = '/table/%(table_name)s/chain'
-    CHAIN_URL = '/table/%(table_name)s/chain/%(chain_name)s'
-    RULE_LIST_URL = '/table/%(table_name)s/chain/%(chain_name)s/rule'
+    TABLE_URL = '/table/%(table_name)s/chain'
+    CHAIN_URL = '/table/%(table_name)s/chain/%(chain_name)s/rule'
     RULE_URL = '/table/%(table_name)s/chain/%(chain_name)s/rule/%(rule_num)d'
 
     @staticmethod
     def get_table_list_url():
-        return API10.TABLE_LIST_URL
+        return API10.PREFIX + \
+               API10.TABLE_LIST_URL
 
     @staticmethod
     def get_table_url(table_name):
-        return API10.TABLE_URL % {'table_name' : table_name}
+        return API10.PREFIX + \
+               API10.TABLE_URL % {'table_name' : table_name}
 
     @staticmethod
-    def get_chain_list_url(table_name):
-        return API10.CHAIN_LIST_URL % {'table_name' : table_name}
-
-    @staticmethod
-    def get_table_url(table_name, chain_name):
-        return API10.CHAIN_URL % {'table_name' : table_name,
+    def get_chain_url(table_name, chain_name):
+        return API10.PREFIX + \
+               API10.CHAIN_URL % {'table_name' : table_name,
                                   'chain_name' : chain_name,
                                   }
 
-class RestfulObject:
+    @staticmethod
+    def get_rule_url(table_name, chain_name, rule_num):
+        return API10.PREFIX + \
+               API10.RULE_URL % {'table_name' : table_name,
+                                  'chain_name' : chain_name,
+                                  'rule_num'   : rule_num,
+                                  }
+
+class RestfulObject(object):
 
     def __init__(self):
         self.response = {}
 
     def to_rest_response(self):
-        return json.dumps(self.response)
+        return flask.jsonify(self.response)
 
 class IptablesTableList10(RestfulObject):
 
     def __init__(self):
-        super(IptablesTableList, self).__init__()
-    
+        super(IptablesTableList10, self).__init__()
+        self.populate_response()
+
+    def populate_response(self):
+        self.response['url'] = API10.get_table_list_url()
+        tables = []
+        for table_name_uppercase in TABLES:
+            table_name = table_name_uppercase.lower()
+            table_url = API10.get_table_url(table_name)
+            table_entry = { 'table_name' : table_name,
+                            'url' : table_url,
+                          }
+            tables.append(table_entry)
+        self.response['tables'] = tables
 
 class IptablesTable10(RestfulObject):
-    pass
+
+    def __init__(self, table_name):
+        super(IptablesTable10, self).__init__()
+        self.populate_response(table_name)
+
+    def populate_response(self, table_name):
+        self.response['url'] = API10.get_table_url(table_name)
+        chains = []
+        for chain_name_uppercase in TABLE_CHAINS[table_name.upper()]:
+            chain_name = chain_name_uppercase.lower()
+            chain_url = API10.get_chain_url(table_name, chain_name)
+            chain_entry = { 'table_name' : table_name,
+                            'chain_name' : chain_name,
+                            'url' : chain_url,
+                          }
+            chains.append(chain_entry)
+        self.response['chains'] = chains
 
 class IptablesChain10(RestfulObject):
     pass
 
 @app.route('/api/v1.0/table', methods=['GET'])
 def show_tables():
-    return flask.jsonify({'tables' : TABLES})
+    #return flask.jsonify({'tables' : TABLES})
+    table_list = IptablesTableList10()
+    return table_list.to_rest_response()
 
 @app.route('/api/v1.0/table/<table_name>/chain', methods=['GET'])
 def show_chains(table_name):
     if table_name.upper() not in TABLES:
         flask.abort(400)
-    return flask.jsonify(
-                        {
-                        'table' : {
-                            'name' : table_name,
-                            'chains' : TABLE_CHAINS[table_name.upper()],
-                            }
-                        })
+    chain_list = IptablesTable10(table_name)
+    return chain_list.to_rest_response()
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule', methods=['GET'])
 def show_rules(table_name, chain_name):
