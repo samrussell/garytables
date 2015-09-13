@@ -36,8 +36,10 @@ TARGETS = ['ACCEPT', 'DROP']
 
 class Rule:
 
-    def __init__(self, num=None, in_interface=None, out_interface=None, src=None, dst=None, protocol=None, target=None):
-        self.num = num
+    def __init__(
+            self, rule_num=None, in_interface=None, out_interface=None,
+            src=None, dst=None, protocol=None, target=None):
+        self.rule_num = rule_num
         self.in_interface = in_interface
         self.out_interface = out_interface
         self.src = src
@@ -82,6 +84,28 @@ class Rule:
             rule.protocol = 'ip'
         rule.target = iptc.Target(rule, self.target)
         chain.insert_rule(rule)
+
+    def get_dict(self):
+        """
+        Returns a dictionary of fields, for a REST response
+        :returns: a dictionary of fields
+        """
+        response = {}
+        if self.rule_num:
+            response['rule_num'] = self.rule_num
+        if self.in_interface:
+            response['in_interface'] = self.in_interface
+        if self.out_interface:
+            response['out_interface'] = self.out_interface
+        if self.src:
+            response['src'] = self.src
+        if self.dst:
+            response['dst'] = self.dst
+        if self.protocol:
+            response['protocol'] = self.protocol
+        if self.target:
+            response['target'] = self.target
+        return response
 
 def parse_iptc_rule_to_dict(rule, rule_num):
     rule_dict = {}
