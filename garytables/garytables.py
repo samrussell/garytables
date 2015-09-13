@@ -24,7 +24,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
 # OTHER DEALINGS IN THE SOFTWARE.
 
-import flask, iptc, json, pprint, hashlib, threading
+import flask, iptc, json, pprint, hashlib, threading, functools
 
 lock_access_iptc = threading.Lock()
 
@@ -345,12 +345,46 @@ class IptablesRule10(RestfulObject):
                      }
         self.response = rule_entry
 
+# HTTP Basic Auth code from http://flask.pocoo.org/snippets/8/
+
+def check_auth(username, password):
+    """
+    This validates a username and password pair
+    :param username: Username to authenticate as
+    :param password: Password for username
+    :returns: True if matching a valid username/password, false otherwise
+    """
+    return username == 'admin' and password == 'secret'
+
+def authenticate():
+    """
+    Sends a 401 response to make a user authenticate
+    :returns: Flask Response object with code 401
+    """
+    return flask.Response(
+        'You need to authenticate first\n', 401,
+        {'WWW-Authenticate' : 'Basic realm="Login required"'})
+
+def requires_auth(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        auth = flask.request.authorization
+        if not auth or not check_auth(
+                auth.username,
+                auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
+
+
 @app.route('/api/v1.0/table', methods=['GET'])
+@requires_auth
 def show_tables():
     table_list = IptablesTableList10()
     return table_list.to_rest_response()
 
 @app.route('/api/v1.0/table/<table_name>/chain', methods=['GET'])
+@requires_auth
 def show_chains(table_name):
     if table_name.upper() not in TABLES:
         flask.abort(400)
@@ -358,6 +392,7 @@ def show_chains(table_name):
     return chain_list.to_rest_response()
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule', methods=['GET'])
+@requires_auth
 def show_rules(table_name, chain_name):
     if table_name.upper() not in TABLES:
         flask.abort(400)
@@ -370,6 +405,7 @@ def show_rules(table_name, chain_name):
     return rule_list.to_rest_response()
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule/<int:rule_num>', methods=['GET'])
+@requires_auth
 def show_rule_by_num(table_name, chain_name, rule_num):
     if table_name.upper() not in TABLES:
         flask.abort(400)
@@ -387,6 +423,7 @@ def show_rule_by_num(table_name, chain_name, rule_num):
     return response
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule/<int:rule_num>', methods=['DELETE'])
+@requires_auth
 def delete_rule_by_num(table_name, chain_name, rule_num):
     if table_name.upper() not in TABLES:
         flask.abort(400)
@@ -415,6 +452,7 @@ def delete_rule_by_num(table_name, chain_name, rule_num):
     return response
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule', methods=['POST'])
+@requires_auth
 def add_rule(table_name, chain_name):
     if table_name.upper() not in TABLES:
         flask.abort(400)
