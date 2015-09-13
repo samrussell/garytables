@@ -48,7 +48,7 @@ class Rule:
     @staticmethod
     def build_from_iptables(rule, rule_num):
         rule_dict = {}
-        rule_dict['num'] = rule_num
+        rule_dict['rule_num'] = rule_num
         rule_dict['target'] = rule.target.name
         # handle logic for table/chain-specific stuff (can do this better
         # example: in_interface is only valid for INPUT chain in FILTER table
@@ -85,7 +85,7 @@ class Rule:
 
 def parse_iptc_rule_to_dict(rule, rule_num):
     rule_dict = {}
-    rule_dict['num'] = rule_num
+    rule_dict['rule_num'] = rule_num
     rule_dict['target'] = rule.target.name
     # handle logic for table/chain-specific stuff (can do this better
     # example: in_interface is only valid for INPUT chain in FILTER table
@@ -98,13 +98,34 @@ def parse_iptc_rule_to_dict(rule, rule_num):
     rule_dict['dst'] = rule.dst
     return rule_dict
 
+def get_iptables_rules_from_chain_by_numbers(table_name, chain_name):
+    """
+    Gets the iptables rules from a chain, with line numbers
 
-def get_iptables_rules_from_chain(table_name, chain_name):
+    :param table_name: Name of the iptables table
+    :param chain_name: Name of the iptables chain within table_name
+    :returns: A dict of rule_num : rule
+    """
     table = iptc.Table(table_name.lower())
     table.refresh()
     chains_by_name = {chain.name : chain for chain in table.chains}
     chain = chains_by_name[chain_name.upper()]
-    rules = [parse_iptc_rule_to_dict(rule, rule_num) for rule_num, rule in enumerate(chain.rules)]
+    rules_by_numbers = {rule_num : parse_iptc_rule_to_dict(rule, rule_num) for rule_num, rule in enumerate(chain.rules, start=1)}
+    return rules_by_numbers
+
+def get_iptables_rules_from_chain(table_name, chain_name):
+    """
+    Gets the iptables rules from a chain
+
+    :param table_name: Name of the iptables table
+    :param chain_name: Name of the iptables chain within table_name
+    :returns: A list of rules
+    """
+    table = iptc.Table(table_name.lower())
+    table.refresh()
+    chains_by_name = {chain.name : chain for chain in table.chains}
+    chain = chains_by_name[chain_name.upper()]
+    rules = [parse_iptc_rule_to_dict(rule, rule_num) for rule_num, rule in enumerate(chain.rules, start=1)]
     return rules
 
 def add_iptables_rule_to_chain(table_name, chain_name, json_input):
@@ -176,6 +197,9 @@ class IptablesTableList10(RestfulObject):
         self.populate_response()
 
     def populate_response(self):
+        '''
+        Populates self.response for REST reply
+        '''
         self.response['url'] = API10.get_table_list_url()
         tables = []
         for table_name_uppercase in TABLES:
@@ -194,6 +218,9 @@ class IptablesTable10(RestfulObject):
         self.populate_response(table_name)
 
     def populate_response(self, table_name):
+        '''
+        Populates self.response for REST reply
+        '''
         self.response['url'] = API10.get_table_url(table_name)
         chains = []
         for chain_name_uppercase in TABLE_CHAINS[table_name.upper()]:
@@ -207,7 +234,28 @@ class IptablesTable10(RestfulObject):
         self.response['chains'] = chains
 
 class IptablesChain10(RestfulObject):
-    pass
+
+    def __init__(self, table_name, chain_name, rules):
+        super(IptablesChain10, self).__init__()
+        self.populate_response(table_name, chain_name, rules)
+
+    def populate_response(self, table_name, chain_name, rules):
+        '''
+        Populates self.response for REST reply
+        '''
+        self.response['url'] = API10.get_chain_url(table_name, chain_name)
+        rule_data = []
+        for rule in rules:
+            rule_num = rule['rule_num']
+            url = API10.get_rule_url(table_name, chain_name, rule_num)
+            rule_entry = { 'table_name' : table_name,
+                           'chain_name' : chain_name,
+                           'rule_num'   : rule_num,
+                           'url'        : url,
+                           'data'       : rule
+                         }
+            rule_data.append(rule_entry)
+        self.response['rules'] = rule_data
 
 @app.route('/api/v1.0/table', methods=['GET'])
 def show_tables():
@@ -231,16 +279,18 @@ def show_rules(table_name, chain_name):
     # get the chain they want
     rules = get_iptables_rules_from_chain(
                 table_name, chain_name)
-    return flask.jsonify(
-                        {
-                        'table' : {
-                            'name' : table_name,
-                            'chain' : {
-                                'name' : chain_name,
-                                'rules' : rules,
-                                }
-                            }
-                        })
+    rule_list = IptablesChain10(table_name, chain_name, rules)
+    return rule_list.to_rest_response()
+    #return flask.jsonify(
+    #                    {
+    #                    'table' : {
+    #                        'name' : table_name,
+    #                        'chain' : {
+    #                            'name' : chain_name,
+    #                            'rules' : rules,
+    #                            }
+    #                        }
+    #                    })
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule/<int:rule_num>', methods=['GET'])
 def show_rule_by_num(table_name, chain_name, rule_num):
@@ -254,7 +304,7 @@ def show_rule_by_num(table_name, chain_name, rule_num):
     if rule_num < 0 or rule_num > (len(rules)-1):
         flask.abort(400)
     rule = rules[rule_num]
-    if rule['num'] != rule_num:
+    if rule['rule_num'] != rule_num:
         flask.abort(400)
     return flask.jsonify(
                         {
