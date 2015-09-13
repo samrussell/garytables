@@ -24,7 +24,9 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
 # OTHER DEALINGS IN THE SOFTWARE.
 
-import flask, iptc, json, pprint, hashlib
+import flask, iptc, json, pprint, hashlib, threading
+
+lock_access_iptc = threading.Lock()
 
 app = flask.Flask(__name__)
 
@@ -78,25 +80,26 @@ class Rule:
         :param table_name: Name of the table to write to
         :param chain_name: Name of the chain to write to
         """
-        table = iptc.Table(table_name.lower())
-        table.refresh()
-        chains_by_name = {chain.name : chain for chain in table.chains}
-        chain = chains_by_name[chain_name.upper()]
-        rule = iptc.Rule()
-        if self.in_interface:
-            rule.in_interface = self.in_interface
-        if self.out_interface:
-            rule.out_interface = self.out_interface
-        if self.src:
-            rule.src = self.src
-        if self.dst:
-            rule.dst = self.dst
-        if self.protocol:
-            rule.protocol = self.protocol
-        else:
-            rule.protocol = 'ip'
-        rule.target = iptc.Target(rule, self.target)
-        chain.insert_rule(rule)
+        with lock_access_iptc:
+            table = iptc.Table(table_name.lower())
+            table.refresh()
+            chains_by_name = {chain.name : chain for chain in table.chains}
+            chain = chains_by_name[chain_name.upper()]
+            rule = iptc.Rule()
+            if self.in_interface:
+                rule.in_interface = self.in_interface
+            if self.out_interface:
+                rule.out_interface = self.out_interface
+            if self.src:
+                rule.src = self.src
+            if self.dst:
+                rule.dst = self.dst
+            if self.protocol:
+                rule.protocol = self.protocol
+            else:
+                rule.protocol = 'ip'
+            rule.target = iptc.Target(rule, self.target)
+            chain.insert_rule(rule)
 
     def get_dict(self):
         """
@@ -153,11 +156,13 @@ def get_iptables_rules_from_chain(table_name, chain_name):
     :param chain_name: Name of the iptables chain within table_name
     :returns: A list of rules
     """
-    table = iptc.Table(table_name.lower())
-    table.refresh()
-    chains_by_name = {chain.name : chain for chain in table.chains}
-    chain = chains_by_name[chain_name.upper()]
-    rules = [Rule.build_from_iptables(rule, rule_num) for rule_num, rule in enumerate(chain.rules, start=1)]
+    with lock_access_iptc:
+        table = iptc.Table(table_name.lower())
+        table.refresh()
+        chains_by_name = {chain.name : chain for chain in table.chains}
+        chain = chains_by_name[chain_name.upper()]
+        # this might not need to be locked, but will confirm this later
+        rules = [Rule.build_from_iptables(rule, rule_num) for rule_num, rule in enumerate(chain.rules, start=1)]
     return rules
 
 def get_iptables_rules_from_chain_by_number(table_name, chain_name):
@@ -173,35 +178,43 @@ def get_iptables_rules_from_chain_by_number(table_name, chain_name):
     return rules_by_numbers
 
 def add_iptables_rule_to_chain(table_name, chain_name, json_input):
-    # it would be better to have a class for rules that does sanity checking...
-    table = iptc.Table(table_name.lower())
-    table.refresh()
-    chains_by_name = {chain.name : chain for chain in table.chains}
-    chain = chains_by_name[chain_name.upper()]
-    rule = iptc.Rule()
-    if 'in_interface' in json_input:
-        rule.in_interface = json_input['in_interface']
-    if 'out_interface' in json_input:
-        rule.out_interface = json_input['out_interface']
-    if 'src' in json_input:
-        rule.src = json_input['src']
-    if 'dst' in json_input:
-        rule.src = json_input['dst']
-    if 'protocol' in json_input:
-        rule.protocol = json_input['protocol']
-    else:
-        rule.protocol = 'ip'
-    rule.target = iptc.Target(rule, json_input['target'])
-    chain.insert_rule(rule)
+    # the Rule class should do the conversion for us?
+    # or maybe some other class?
+    with lock_access_iptc:
+        table = iptc.Table(table_name.lower())
+        table.refresh()
+        chains_by_name = {chain.name : chain for chain in table.chains}
+        chain = chains_by_name[chain_name.upper()]
+        rule = iptc.Rule()
+        if 'in_interface' in json_input:
+            rule.in_interface = json_input['in_interface']
+        if 'out_interface' in json_input:
+            rule.out_interface = json_input['out_interface']
+        if 'src' in json_input:
+            rule.src = json_input['src']
+        if 'dst' in json_input:
+            rule.src = json_input['dst']
+        if 'protocol' in json_input:
+            rule.protocol = json_input['protocol']
+        else:
+            rule.protocol = 'ip'
+        rule.target = iptc.Target(rule, json_input['target'])
+        chain.insert_rule(rule)
 
-def delete_iptables_rule_from_chain(table_name, chain_name, rule_num):
-    # it would be better to have a class for rules that does sanity checking...
-    table = iptc.Table(table_name.lower())
-    table.refresh()
-    chains_by_name = {chain.name : chain for chain in table.chains}
-    chain = chains_by_name[chain_name.upper()]
-    rules = {rule_num : rule for rule_num, rule in enumerate(chain.rules, start=1)}
-    chain.delete_rule(rules[rule_num])
+def delete_iptables_rule_from_chain(table_name, chain_name, rule_num, rule_etag):
+    with lock_access_iptc:
+        table = iptc.Table(table_name.lower())
+        table.refresh()
+        chains_by_name = {chain.name : chain for chain in table.chains}
+        chain = chains_by_name[chain_name.upper()]
+        rules = {rule_num : rule for rule_num, rule in enumerate(chain.rules, start=1)}
+        rule_to_delete = rules[rule_num]
+        rule_object = Rule.build_from_iptables(rule_to_delete, rule_num)
+        if rule_object.get_etag() == rule_etag:
+            chain.delete_rule(rules[rule_num])
+            return True
+        # something happened before we got the lock
+        return False
 
 class API10:
     PREFIX = '/api/v1.0'
@@ -334,7 +347,6 @@ class IptablesRule10(RestfulObject):
 
 @app.route('/api/v1.0/table', methods=['GET'])
 def show_tables():
-    #return flask.jsonify({'tables' : TABLES})
     table_list = IptablesTableList10()
     return table_list.to_rest_response()
 
@@ -393,9 +405,13 @@ def delete_rule_by_num(table_name, chain_name, rule_num):
         flask.abort(403)
     if flask.request.headers.get('ETag') != rule_etag:
         flask.abort(412)
-    delete_iptables_rule_from_chain(table_name, chain_name, rule_num)
-    response = flask.make_response('', 204)
-
+    # this is a major race condition candidate, should take ETag and compare just before alter
+    # probably want some sort of locking at a minimum
+    success = delete_iptables_rule_from_chain(table_name, chain_name, rule_num, rule_etag)
+    if success:
+        response = flask.make_response('', 204)
+    else:
+        flask.abort(412)
     return response
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule', methods=['POST'])
