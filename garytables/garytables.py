@@ -98,7 +98,7 @@ def parse_iptc_rule_to_dict(rule, rule_num):
     rule_dict['dst'] = rule.dst
     return rule_dict
 
-def get_iptables_rules_from_chain_by_numbers(table_name, chain_name):
+def get_iptables_rules_from_chain_by_number(table_name, chain_name):
     """
     Gets the iptables rules from a chain, with line numbers
 
@@ -257,6 +257,26 @@ class IptablesChain10(RestfulObject):
             rule_data.append(rule_entry)
         self.response['rules'] = rule_data
 
+class IptablesRule10(RestfulObject):
+
+    def __init__(self, table_name, chain_name, rule):
+        super(IptablesRule10, self).__init__()
+        self.populate_response(table_name, chain_name, rule)
+
+    def populate_response(self, table_name, chain_name, rule):
+        '''
+        Populates self.response for REST reply
+        '''
+        rule_num = rule['rule_num']
+        url = API10.get_rule_url(table_name, chain_name, rule_num)
+        rule_entry = { 'table_name' : table_name,
+                       'chain_name' : chain_name,
+                       'rule_num'   : rule_num,
+                       'url'        : url,
+                       'data'       : rule
+                     }
+        self.response = rule_entry
+
 @app.route('/api/v1.0/table', methods=['GET'])
 def show_tables():
     #return flask.jsonify({'tables' : TABLES})
@@ -281,16 +301,6 @@ def show_rules(table_name, chain_name):
                 table_name, chain_name)
     rule_list = IptablesChain10(table_name, chain_name, rules)
     return rule_list.to_rest_response()
-    #return flask.jsonify(
-    #                    {
-    #                    'table' : {
-    #                        'name' : table_name,
-    #                        'chain' : {
-    #                            'name' : chain_name,
-    #                            'rules' : rules,
-    #                            }
-    #                        }
-    #                    })
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule/<int:rule_num>', methods=['GET'])
 def show_rule_by_num(table_name, chain_name, rule_num):
@@ -299,23 +309,13 @@ def show_rule_by_num(table_name, chain_name, rule_num):
     if chain_name.upper() not in TABLE_CHAINS[table_name.upper()]:
         flask.abort(400)
     # get the chain they want
-    rules = get_iptables_rules_from_chain(
+    rules_by_number = get_iptables_rules_from_chain_by_number(
                 table_name, chain_name)
-    if rule_num < 0 or rule_num > (len(rules)-1):
+    if rule_num not in rules_by_number.keys():
         flask.abort(400)
-    rule = rules[rule_num]
-    if rule['rule_num'] != rule_num:
-        flask.abort(400)
-    return flask.jsonify(
-                        {
-                        'table' : {
-                            'name' : table_name,
-                            'chain' : {
-                                'name' : chain_name,
-                                'rule' : rule,
-                                }
-                            }
-                        })
+    rule = rules_by_number[rule_num]
+    rule_data = IptablesRule10(table_name, chain_name, rule)
+    return rule_data.to_rest_response()
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule', methods=['POST'])
 def add_rule(table_name, chain_name):
