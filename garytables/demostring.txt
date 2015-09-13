@@ -1,1 +1,3 @@
-curl -i -H "Content-Type: application/json" -X POST -d '{"src":"3.3.4.4/255.255.255.255", "target":"DROP"}' http://localhost:8080/api/v1.0/table/filter/chain/input
+curl -i -H "Content-Type: application/json" -X POST -d '{"src":"3.3.4.6/255.255.255.255", "target":"DROP"}' http://localhost:8080/api/v1.0/table/filter/chain/input/rule
+curl -i -X GET http://localhost:8080/api/v1.0/table/filter/chain/input/rule/1
+curl -i -H "ETag: 3261b49bf9877992c1d832d946f16d3679cc3209ecae7e7d64ced62753b6986c" -X DELETE http://localhost:8080/api/v1.0/table/filter/chain/input/rule/1

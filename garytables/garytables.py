@@ -24,7 +24,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
 # OTHER DEALINGS IN THE SOFTWARE.
 
-import flask, iptc, json
+import flask, iptc, json, pprint, hashlib
 
 app = flask.Flask(__name__)
 
@@ -49,6 +49,13 @@ class Rule:
 
     @staticmethod
     def build_from_iptables(rule, rule_num):
+        """
+        Factory to make a new Rule from a python-iptables Rule
+
+        :param rule: An iptc.Rule object
+        :param rule_num: The index of the rule in the list (starts with 1)
+        :returns: A garytables.Rule object, equivalent to param 'rule'
+        """
         rule_dict = {}
         rule_dict['rule_num'] = rule_num
         rule_dict['target'] = rule.target.name
@@ -65,6 +72,12 @@ class Rule:
         return Rule(**rule_dict)
 
     def write_to_iptables(self, table_name, chain_name):
+        """
+        Writes this Rule to iptables
+
+        :param table_name: Name of the table to write to
+        :param chain_name: Name of the chain to write to
+        """
         table = iptc.Table(table_name.lower())
         table.refresh()
         chains_by_name = {chain.name : chain for chain in table.chains}
@@ -107,35 +120,30 @@ class Rule:
             response['target'] = self.target
         return response
 
-def parse_iptc_rule_to_dict(rule, rule_num):
-    rule_dict = {}
-    rule_dict['rule_num'] = rule_num
-    rule_dict['target'] = rule.target.name
-    # handle logic for table/chain-specific stuff (can do this better
-    # example: in_interface is only valid for INPUT chain in FILTER table
-    if rule.in_interface:
-        rule_dict['in_interface'] = rule.in_interface
-    if rule.out_interface:
-        rule_dict['out_interface'] = rule.out_interface
-    rule_dict['protocol'] = rule.protocol
-    rule_dict['src'] = rule.src
-    rule_dict['dst'] = rule.dst
-    return rule_dict
+    def get_etag(self):
+        """
+        Generates an etag for this Rule to allow optimistic locking
 
-def get_iptables_rules_from_chain_by_number(table_name, chain_name):
-    """
-    Gets the iptables rules from a chain, with line numbers
+        :returns: a (ideally) UUID string for this Rule
+        """
+        rule_dict_string = pprint.pformat(self.get_dict())
+        etag_hash = hashlib.sha256(rule_dict_string).hexdigest()
+        return etag_hash
 
-    :param table_name: Name of the iptables table
-    :param chain_name: Name of the iptables chain within table_name
-    :returns: A dict of rule_num : rule
-    """
-    table = iptc.Table(table_name.lower())
-    table.refresh()
-    chains_by_name = {chain.name : chain for chain in table.chains}
-    chain = chains_by_name[chain_name.upper()]
-    rules_by_numbers = {rule_num : parse_iptc_rule_to_dict(rule, rule_num) for rule_num, rule in enumerate(chain.rules, start=1)}
-    return rules_by_numbers
+#def parse_iptc_rule_to_dict(rule, rule_num):
+#    rule_dict = {}
+#    rule_dict['rule_num'] = rule_num
+#    rule_dict['target'] = rule.target.name
+#    # handle logic for table/chain-specific stuff (can do this better
+#    # example: in_interface is only valid for INPUT chain in FILTER table
+#    if rule.in_interface:
+#        rule_dict['in_interface'] = rule.in_interface
+#    if rule.out_interface:
+#        rule_dict['out_interface'] = rule.out_interface
+#    rule_dict['protocol'] = rule.protocol
+#    rule_dict['src'] = rule.src
+#    rule_dict['dst'] = rule.dst
+#    return rule_dict
 
 def get_iptables_rules_from_chain(table_name, chain_name):
     """
@@ -149,8 +157,20 @@ def get_iptables_rules_from_chain(table_name, chain_name):
     table.refresh()
     chains_by_name = {chain.name : chain for chain in table.chains}
     chain = chains_by_name[chain_name.upper()]
-    rules = [parse_iptc_rule_to_dict(rule, rule_num) for rule_num, rule in enumerate(chain.rules, start=1)]
+    rules = [Rule.build_from_iptables(rule, rule_num) for rule_num, rule in enumerate(chain.rules, start=1)]
     return rules
+
+def get_iptables_rules_from_chain_by_number(table_name, chain_name):
+    """
+    Gets the iptables rules from a chain, with line numbers
+
+    :param table_name: Name of the iptables table
+    :param chain_name: Name of the iptables chain within table_name
+    :returns: A dict of rule_num : rule
+    """
+    rules = get_iptables_rules_from_chain(table_name, chain_name)
+    rules_by_numbers = {rule.rule_num : rule for rule in rules}
+    return rules_by_numbers
 
 def add_iptables_rule_to_chain(table_name, chain_name, json_input):
     # it would be better to have a class for rules that does sanity checking...
@@ -173,6 +193,15 @@ def add_iptables_rule_to_chain(table_name, chain_name, json_input):
         rule.protocol = 'ip'
     rule.target = iptc.Target(rule, json_input['target'])
     chain.insert_rule(rule)
+
+def delete_iptables_rule_from_chain(table_name, chain_name, rule_num):
+    # it would be better to have a class for rules that does sanity checking...
+    table = iptc.Table(table_name.lower())
+    table.refresh()
+    chains_by_name = {chain.name : chain for chain in table.chains}
+    chain = chains_by_name[chain_name.upper()]
+    rules = {rule_num : rule for rule_num, rule in enumerate(chain.rules, start=1)}
+    chain.delete_rule(rules[rule_num])
 
 class API10:
     PREFIX = '/api/v1.0'
@@ -270,13 +299,14 @@ class IptablesChain10(RestfulObject):
         self.response['url'] = API10.get_chain_url(table_name, chain_name)
         rule_data = []
         for rule in rules:
-            rule_num = rule['rule_num']
+            rule_dict = rule.get_dict()
+            rule_num = rule_dict['rule_num']
             url = API10.get_rule_url(table_name, chain_name, rule_num)
             rule_entry = { 'table_name' : table_name,
                            'chain_name' : chain_name,
                            'rule_num'   : rule_num,
                            'url'        : url,
-                           'data'       : rule
+                           'data'       : rule_dict
                          }
             rule_data.append(rule_entry)
         self.response['rules'] = rule_data
@@ -291,13 +321,14 @@ class IptablesRule10(RestfulObject):
         '''
         Populates self.response for REST reply
         '''
-        rule_num = rule['rule_num']
+        rule_dict = rule.get_dict()
+        rule_num = rule_dict['rule_num']
         url = API10.get_rule_url(table_name, chain_name, rule_num)
         rule_entry = { 'table_name' : table_name,
                        'chain_name' : chain_name,
                        'rule_num'   : rule_num,
                        'url'        : url,
-                       'data'       : rule
+                       'data'       : rule_dict
                      }
         self.response = rule_entry
 
@@ -339,7 +370,33 @@ def show_rule_by_num(table_name, chain_name, rule_num):
         flask.abort(400)
     rule = rules_by_number[rule_num]
     rule_data = IptablesRule10(table_name, chain_name, rule)
-    return rule_data.to_rest_response()
+    response = rule_data.to_rest_response()
+    response.headers['ETag'] = rule.get_etag()
+    return response
+
+@app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule/<int:rule_num>', methods=['DELETE'])
+def delete_rule_by_num(table_name, chain_name, rule_num):
+    if table_name.upper() not in TABLES:
+        flask.abort(400)
+    if chain_name.upper() not in TABLE_CHAINS[table_name.upper()]:
+        flask.abort(400)
+    # get the chain they want
+    rules_by_number = get_iptables_rules_from_chain_by_number(
+                table_name, chain_name)
+    if rule_num not in rules_by_number.keys():
+        flask.abort(400)
+    rule = rules_by_number[rule_num]
+    rule_dict = rule.get_dict()
+    #rule_data = IptablesRule10(table_name, chain_name, rule)
+    rule_etag = rule.get_etag()
+    if 'ETag' not in flask.request.headers:
+        flask.abort(403)
+    if flask.request.headers.get('ETag') != rule_etag:
+        flask.abort(412)
+    delete_iptables_rule_from_chain(table_name, chain_name, rule_num)
+    response = flask.make_response('', 204)
+
+    return response
 
 @app.route('/api/v1.0/table/<table_name>/chain/<chain_name>/rule', methods=['POST'])
 def add_rule(table_name, chain_name):
@@ -352,16 +409,9 @@ def add_rule(table_name, chain_name):
         flask.abort(400)
 
     add_iptables_rule_to_chain(table_name, chain_name, flask.request.json)
-    return flask.jsonify(
-                        {
-                        'table' : {
-                            'name' : table_name,
-                            'chain' : {
-                                'name' : chain_name,
-                                'rule' : flask.request.json,
-                                }
-                            }
-                        })
+    # when inserting at front, rule_num will be 1
+    rule_num = 1
+    return show_rule_by_num(table_name, chain_name, rule_num)
 
 def main():
     app.debug = True
