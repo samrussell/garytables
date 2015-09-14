@@ -133,21 +133,6 @@ class Rule:
         etag_hash = hashlib.sha256(rule_dict_string).hexdigest()
         return etag_hash
 
-#def parse_iptc_rule_to_dict(rule, rule_num):
-#    rule_dict = {}
-#    rule_dict['rule_num'] = rule_num
-#    rule_dict['target'] = rule.target.name
-#    # handle logic for table/chain-specific stuff (can do this better
-#    # example: in_interface is only valid for INPUT chain in FILTER table
-#    if rule.in_interface:
-#        rule_dict['in_interface'] = rule.in_interface
-#    if rule.out_interface:
-#        rule_dict['out_interface'] = rule.out_interface
-#    rule_dict['protocol'] = rule.protocol
-#    rule_dict['src'] = rule.src
-#    rule_dict['dst'] = rule.dst
-#    return rule_dict
-
 def get_iptables_rules_from_chain(table_name, chain_name):
     """
     Gets the iptables rules from a chain
