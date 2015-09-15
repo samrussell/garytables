@@ -13,6 +13,7 @@ Contents:
 
 .. automodule:: garytables
 
+.. autoclass:: Rule
 
 Indices and tables
 ==================

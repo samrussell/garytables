@@ -37,6 +37,19 @@ TABLE_CHAINS = { 'FILTER' : FILTER_CHAINS }
 TARGETS = ['ACCEPT', 'DROP']
 
 class Rule:
+    """
+    This class represents an iptables Rule
+
+    A Rule consists of a set of parameters to match on, and a target.
+    Currently, the following parameters are supported:
+
+    - Interface (in and out)
+    - IP address (source and destination)
+    - Protocol (only IP)
+    
+    All targets are currently supported, with no per-chain sanity checking
+
+    """
 
     def __init__(
             self, rule_num=None, in_interface=None, out_interface=None,
