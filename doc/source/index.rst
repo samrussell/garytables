@@ -12,8 +12,7 @@ Contents:
    :maxdepth: 2
 
 .. automodule:: garytables
-
-.. autoclass:: Rule
+    :members:
 
 Indices and tables
 ==================
