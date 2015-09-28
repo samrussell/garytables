@@ -24,12 +24,21 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR 
 # OTHER DEALINGS IN THE SOFTWARE.
 
-from garytables import garytables
+from unittest import TestCase
+import mock
 
 def test_urls():
-    assert garytables.API10.get_table_list_url() == '/api/v1.0/table'
-    assert garytables.API10.get_table_url('filter') == '/api/v1.0/table/filter/chain'
-    assert garytables.API10.get_chain_url('filter', 'input') == '/api/v1.0/table/filter/chain/input/rule'
-    assert garytables.API10.get_rule_url('filter', 'input', 3) == '/api/v1.0/table/filter/chain/input/rule/3'
+  iptc_mock = mock.MagicMock()
+  modules = {
+    'iptc' : iptc_mock
+  }
+  mock.module_patcher = mock.patch.dict('sys.modules', modules)
+  mock.module_patcher.start()
+  from garytables import garytables
+
+  assert garytables.API10.get_table_list_url() == '/api/v1.0/table'
+  assert garytables.API10.get_table_url('filter') == '/api/v1.0/table/filter/chain'
+  assert garytables.API10.get_chain_url('filter', 'input') == '/api/v1.0/table/filter/chain/input/rule'
+  assert garytables.API10.get_rule_url('filter', 'input', 3) == '/api/v1.0/table/filter/chain/input/rule/3'
 
 
